@@ -28,23 +28,25 @@ def tokenize(text):
     return clean_tokens
 
 # Set up database connection
-database_url = os.environ.get('DATABASE_URL', None)
+database_url = os.environ.get('DATABASE_URL', None)  # Render sets this automatically
 if database_url:
-    database_url = database_url.replace("postgres://", "postgresql://")
+    database_url = database_url.replace("postgres://", "postgresql://")  # Use correct PostgreSQL URL
 else:
-    database_filepath = os.path.abspath(os.path.join(os.getcwd(), '../data/DisasterResponse.db'))
-    database_url = f'sqlite:///{database_filepath}'
+    print("Error: DATABASE_URL environment variable is not set.")
+    exit(1)
 
+# Connect to the database using SQLAlchemy
 try:
     engine = create_engine(database_url)
+    # Ensure the 'disaster_messages' table exists in your PostgreSQL database
     df = pd.read_sql_table('disaster_messages', engine)
 except Exception as e:
     print(f"Error connecting to the database: {e}")
     exit(1)
 
 # Google Drive model file ID
-file_id = os.environ.get('GOOGLE_DRIVE_MODEL_FILE_ID', '1eMAjZM3_oCC_cV-EVUswCnL3_jj31ryH')
-model_filepath = os.path.abspath(os.path.join(os.getcwd(), '../models/classifier.pkl'))
+file_id = os.environ.get('GOOGLE_DRIVE_MODEL_FILE_ID', '1eMAjZM3_oCC_cV-EVUswCnL3_jj31ryH')  # Default ID if not set
+model_filepath = os.path.abspath(os.path.join(os.getcwd(), 'models/classifier.pkl'))
 download_url = f'https://drive.google.com/uc?id={file_id}'
 
 def download_model():
@@ -57,12 +59,14 @@ def download_model():
 
 download_model()
 
+# Load the pre-trained model
 try:
     model = load(model_filepath)
 except Exception as e:
     print(f"Error loading model: {e}")
     exit(1)
 
+# Generate plot function using Matplotlib
 def generate_plot(x, y, title, xlabel, ylabel):
     plt.figure(figsize=(10, 6))
     plt.bar(x, y, color='skyblue')
