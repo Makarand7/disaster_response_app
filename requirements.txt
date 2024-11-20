@@ -6,3 +6,4 @@ nltk
 pandas
 scikit-learn
 SQLAlchemy
+psycopg2-binary
