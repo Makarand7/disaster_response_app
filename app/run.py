@@ -27,18 +27,14 @@ def tokenize(text):
     clean_tokens = [w for w in words if w not in stop_words]
     return clean_tokens
 
-# Set up database connection
-database_url = os.environ.get('DATABASE_URL', None)  # Render sets this automatically
-if database_url:
-    database_url = database_url.replace("postgres://", "postgresql://")  # Use correct PostgreSQL URL
-else:
-    print("Error: DATABASE_URL environment variable is not set.")
-    exit(1)
+# Set up database connection (SQLite for local DB)
+database_filepath = os.path.abspath(os.path.join(os.getcwd(), 'data/DisasterResponse.db'))
+database_url = f'sqlite:///{database_filepath}'
 
-# Connect to the database using SQLAlchemy
+# Connect to the database using SQLAlchemy (SQLite in this case)
 try:
     engine = create_engine(database_url)
-    # Ensure the 'disaster_messages' table exists in your PostgreSQL database
+    # Ensure the 'disaster_messages' table exists in your SQLite database
     df = pd.read_sql_table('disaster_messages', engine)
 except Exception as e:
     print(f"Error connecting to the database: {e}")
@@ -111,4 +107,5 @@ def go():
     return render_template('go.html', query=query, classification_result=classification_results)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))  # Default to 5000 if no port is specified
+    app.run(host='0.0.0.0', port=port, debug=True)
