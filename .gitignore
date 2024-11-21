@@ -1,0 +1,21 @@
+# Python cache files
+*.pyc
+*.pyo
+__pycache__/
+app/__pycache__/
+
+# Environment files
+*.env
+.env/
+
+# Logs and temporary files
+*.log
+*.sqlite3
+
+# Model and large files (already dynamically downloaded)
+models/classifier.pkl
+
+# System files
+.DS_Store
+Thumbs.db
+

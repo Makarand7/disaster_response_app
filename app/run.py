@@ -1,25 +1,23 @@
-import json
-import pandas as pd
 import os
-import gdown
 import re
-import matplotlib.pyplot as plt
 import io
+import pandas as pd
+import matplotlib.pyplot as plt
 from base64 import b64encode
-from nltk.tokenize import word_tokenize
-from nltk.corpus import stopwords
 from flask import Flask, render_template, request
 from joblib import load
 from sqlalchemy import create_engine
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
 import nltk
 
 # Ensure required NLTK data is downloaded
-nltk.download('stopwords')
-nltk.download('punkt')
+nltk.download("stopwords")
+nltk.download("punkt")
 
 app = Flask(__name__)
 
-# Define the tokenize function
+# Tokenize function
 def tokenize(text):
     stop_words = set(stopwords.words("english"))
     text = re.sub(r"[^a-zA-Z0-9]", " ", text.lower())
@@ -27,75 +25,44 @@ def tokenize(text):
     clean_tokens = [w for w in words if w not in stop_words]
     return clean_tokens
 
-# Set up database connection (SQLite database in the 'data' folder)
-database_filepath = os.path.abspath(os.path.join(os.getcwd(), '../data/DisasterResponse.db'))
-database_url = f'sqlite:///{database_filepath}'
-
-# Connect to the database using SQLAlchemy
+# Load database
+database_filepath = os.path.abspath(os.path.join(os.getcwd(), "data/DisasterResponse.db"))
+engine = create_engine(f"sqlite:///{database_filepath}")
 try:
-    engine = create_engine(database_url)
-    df = pd.read_sql_table('disaster_messages', engine)
+    df = pd.read_sql_table("disaster_messages", engine)
 except Exception as e:
-    print(f"Error connecting to the database: {e}")
+    print(f"Error connecting to database: {e}")
     exit(1)
 
-# Google Drive model file ID
-file_id = os.environ.get('GOOGLE_DRIVE_MODEL_FILE_ID', '1eMAjZM3_oCC_cV-EVUswCnL3_jj31ryH')  # Default ID if not set
-model_filepath = os.path.abspath(os.path.join(os.getcwd(), '../models/classifier.pkl'))
-download_url = f'https://drive.google.com/uc?id={file_id}'
+# Lazy-load model
+model_filepath = os.path.abspath(os.path.join(os.getcwd(), "models/classifier.pkl"))
+model = None
 
-def download_model():
-    if not os.path.exists(model_filepath):
-        try:
-            gdown.download(download_url, model_filepath, quiet=False)
-        except Exception as e:
-            print(f"Error downloading the model: {e}")
-            exit(1)
-
-download_model()
-
-# Load the pre-trained model
-try:
-    model = load(model_filepath)
-except Exception as e:
-    print(f"Error loading model: {e}")
-    exit(1)
-
-# Generate plot function using Matplotlib
-def generate_plot(x, y, title, xlabel, ylabel):
-    plt.figure(figsize=(10, 6))
-    plt.bar(x, y, color='skyblue')
-    plt.title(title)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.xticks(rotation=45, ha='right')
-    plt.tight_layout()
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
-    plot_data = b64encode(buf.read()).decode('utf-8')
-    buf.close()
-    plt.close()
-    return plot_data
-
-@app.route('/')
-@app.route('/index')
+@app.route("/")
+@app.route("/index")
 def index():
-    genre_counts = df.groupby('genre').count()['message']
+    genre_counts = df.groupby("genre").count()["message"]
     genre_names = list(genre_counts.index)
 
     category_counts = df.iloc[:, 4:].sum().sort_values(ascending=False)
     category_names = list(category_counts.index)
 
-    genre_plot = generate_plot(genre_names, genre_counts, "Distribution of Message Genres", "Genre", "Count")
-    category_plot = generate_plot(category_names, category_counts, "Distribution of Message Categories", "Category", "Count")
+    genre_plot = generate_plot(genre_names, genre_counts, "Message Genres", "Genre", "Count")
+    category_plot = generate_plot(category_names, category_counts, "Message Categories", "Category", "Count")
 
-    return render_template('master.html', genre_plot=genre_plot, category_plot=category_plot)
+    return render_template("master.html", genre_plot=genre_plot, category_plot=category_plot)
 
-@app.route('/go')
+@app.route("/go")
 def go():
-    query = request.args.get('query', '')
+    global model
+    query = request.args.get("query", "")
+    if model is None:  # Load model only when required
+        try:
+            model = load(model_filepath)
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            return render_template("go.html", query=query, classification_result={})
+
     try:
         classification_labels = model.predict([query])[0]
         classification_results = dict(zip(df.columns[4:], classification_labels))
@@ -103,7 +70,25 @@ def go():
         print(f"Error in prediction: {e}")
         classification_results = {}
 
-    return render_template('go.html', query=query, classification_result=classification_results)
+    return render_template("go.html", query=query, classification_result=classification_results)
 
-if __name__ == '__main__':
+def generate_plot(x, y, title, xlabel, ylabel):
+    plt.figure(figsize=(10, 6))
+    plt.bar(x, y, color="skyblue")
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png")
+    buf.seek(0)
+    plot_data = b64encode(buf.read()).decode("utf-8")
+    buf.close()
+    plt.close()
+    return plot_data
+
+if __name__ == "__main__":
     app.run(debug=True)
+
