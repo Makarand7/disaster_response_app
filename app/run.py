@@ -25,7 +25,7 @@ def tokenize(text):
     clean_tokens = [w for w in words if w not in stop_words]
     return clean_tokens
 
-# Load database
+# Load SQLite database directly from 'data/DisasterResponse.db'
 database_filepath = os.path.abspath(os.path.join(os.getcwd(), "data/DisasterResponse.db"))
 engine = create_engine(f"sqlite:///{database_filepath}")
 try:
@@ -34,7 +34,7 @@ except Exception as e:
     print(f"Error connecting to database: {e}")
     exit(1)
 
-# Lazy-load model
+# Lazy-load model from 'models/classifier.pkl'
 model_filepath = os.path.abspath(os.path.join(os.getcwd(), "models/classifier.pkl"))
 model = None
 
@@ -56,7 +56,9 @@ def index():
 def go():
     global model
     query = request.args.get("query", "")
-    if model is None:  # Load model only when required
+    
+    # Load model only when required
+    if model is None:
         try:
             model = load(model_filepath)
         except Exception as e:
@@ -91,4 +93,3 @@ def generate_plot(x, y, title, xlabel, ylabel):
 
 if __name__ == "__main__":
     app.run(debug=True)
-

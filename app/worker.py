@@ -23,4 +23,3 @@ def download_model():
         except Exception as e:
             return f"Error downloading model: {e}"
     return "Model already exists."
-
