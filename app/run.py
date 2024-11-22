@@ -25,9 +25,10 @@ def tokenize(text):
     clean_tokens = [w for w in words if w not in stop_words]
     return clean_tokens
 
-# Load SQLite database directly from 'data/DisasterResponse.db'
-database_filepath = os.path.abspath(os.path.join(os.getcwd(), "data/DisasterResponse.db"))
+# Set up database connection using the relative path in the 'data/' folder
+database_filepath = os.path.join(os.getcwd(), "data", "DisasterResponse.db")  # Absolute path for local and Render
 engine = create_engine(f"sqlite:///{database_filepath}")
+
 try:
     df = pd.read_sql_table("disaster_messages", engine)
 except Exception as e:
@@ -35,11 +36,11 @@ except Exception as e:
     exit(1)
 
 # Lazy-load model from 'models/classifier.pkl'
-model_filepath = os.path.abspath(os.path.join(os.getcwd(), "models/classifier.pkl"))
+model_filepath = os.path.abspath(os.path.join(os.getcwd(), "models", "classifier.pkl"))
 model = None
 
-@app.route("/")
 @app.route("/index")
+@app.route("/")
 def index():
     genre_counts = df.groupby("genre").count()["message"]
     genre_names = list(genre_counts.index)
