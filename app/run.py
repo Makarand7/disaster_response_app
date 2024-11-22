@@ -91,8 +91,11 @@ def generate_plot(x, y, title, xlabel, ylabel):
     buf.seek(0)
     plot_data = b64encode(buf.read()).decode("utf-8")
     buf.close()
-    plt.close()
+    plt.close("all")  # Explicitly close all figures to suppress Matplotlib warning
     return plot_data
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Get the port from the environment variable; default to 5000 if not found
+    port = int(os.environ.get("PORT", 5000))
+    # Bind to 0.0.0.0 for external connections
+    app.run(host="0.0.0.0", port=port, debug=True)
