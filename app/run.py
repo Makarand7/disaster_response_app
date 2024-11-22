@@ -26,10 +26,11 @@ def tokenize(text):
     return clean_tokens
 
 # Set up database connection using the relative path in the 'data/' folder
-database_filepath = os.path.join(os.getcwd(), "data", "DisasterResponse.db")  # Absolute path for local and Render
+database_filepath = os.path.abspath(os.path.join(os.getcwd(), "data", "DisasterResponse.db"))  # Absolute path for both local and Render
 engine = create_engine(f"sqlite:///{database_filepath}")
 
 try:
+    # Reading the disaster_messages table from the SQLite database
     df = pd.read_sql_table("disaster_messages", engine)
 except Exception as e:
     print(f"Error connecting to database: {e}")
@@ -42,12 +43,15 @@ model = None
 @app.route("/index")
 @app.route("/")
 def index():
+    # Grouping and counting messages by genre for visualizations
     genre_counts = df.groupby("genre").count()["message"]
     genre_names = list(genre_counts.index)
 
+    # Counting categories (assumed columns start from 4)
     category_counts = df.iloc[:, 4:].sum().sort_values(ascending=False)
     category_names = list(category_counts.index)
 
+    # Generate plots
     genre_plot = generate_plot(genre_names, genre_counts, "Message Genres", "Genre", "Count")
     category_plot = generate_plot(category_names, category_counts, "Message Categories", "Category", "Count")
 
@@ -67,6 +71,7 @@ def go():
             return render_template("go.html", query=query, classification_result={})
 
     try:
+        # Making prediction using the loaded model
         classification_labels = model.predict([query])[0]
         classification_results = dict(zip(df.columns[4:], classification_labels))
     except Exception as e:
@@ -76,6 +81,7 @@ def go():
     return render_template("go.html", query=query, classification_result=classification_results)
 
 def generate_plot(x, y, title, xlabel, ylabel):
+    # Function to generate and encode plots for the front-end
     plt.figure(figsize=(10, 6))
     plt.bar(x, y, color="skyblue")
     plt.title(title)
@@ -93,4 +99,5 @@ def generate_plot(x, y, title, xlabel, ylabel):
     return plot_data
 
 if __name__ == "__main__":
+    # Run the Flask app
     app.run(debug=True)
