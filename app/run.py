@@ -2,7 +2,7 @@ import os
 import re
 import io
 import pandas as pd
-import matplotlib.pyplot as plt
+
 from base64 import b64encode
 from flask import Flask, render_template, request
 from joblib import load
@@ -10,6 +10,10 @@ from sqlalchemy import create_engine
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 import nltk
+
+import plotly
+from plotly.graph_objs import Bar
+import json
 
 # Ensure required NLTK data is downloaded
 nltk.download("stopwords")
@@ -51,10 +55,41 @@ def index():
     category_counts = df.iloc[:, 4:].sum().sort_values(ascending=False)
     category_names = list(category_counts.index)
 
-    genre_plot = generate_plot(genre_names, genre_counts, "Message Genres", "Genre", "Count")
-    category_plot = generate_plot(category_names, category_counts, "Message Categories", "Category", "Count")
+    # Create visuals
+    graphs = [
+        {
+            'data': [
+                Bar(
+                    x=genre_names,
+                    y=genre_counts
+                )
+            ],
+            'layout': {
+                'title': 'Distribution of Message Genres',
+                'yaxis': {'title': "Count"},
+                'xaxis': {'title': "Genre"}
+            }
+        },
+        {
+            'data': [
+                Bar(
+                    x=category_names,
+                    y=category_counts
+                )
+            ],
+            'layout': {
+                'title': 'Distribution of Message Categories',
+                'yaxis': {'title': "Count"},
+                'xaxis': {'title': "Category", 'tickangle': -35}
+            }
+        }
+    ]
 
-    return render_template("master.html", genre_plot=genre_plot, category_plot=category_plot)
+    # Encode plotly graphs in JSON
+    ids = ["graph-{}".format(i) for i, _ in enumerate(graphs)]
+    graphJSON = json.dumps(graphs, cls=plotly.utils.PlotlyJSONEncoder)
+
+    return render_template('master.html', ids=ids, graphJSON=graphJSON)
 
 @app.route("/go")
 def go():
@@ -77,25 +112,9 @@ def go():
 
     return render_template("go.html", query=query, classification_result=classification_results)
 
-def generate_plot(x, y, title, xlabel, ylabel):
-    plt.figure(figsize=(10, 6))
-    plt.bar(x, y, color="skyblue")
-    plt.title(title)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.xticks(rotation=45, ha="right")
-    plt.tight_layout()
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png")
-    buf.seek(0)
-    plot_data = b64encode(buf.read()).decode("utf-8")
-    buf.close()
-    plt.close("all")  # Explicitly close all figures to suppress Matplotlib warning
-    return plot_data
-
 if __name__ == "__main__":
     # Get the port from the environment variable; default to 5000 if not found
     port = int(os.environ.get("PORT", 5000))
     # Bind to 0.0.0.0 for external connections
     app.run(host="0.0.0.0", port=port, debug=True)
+

@@ -1,52 +1,163 @@
 import sys
 import pandas as pd
+import pickle
 from sqlalchemy import create_engine
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.multioutput import MultiOutputClassifier
 from sklearn.metrics import classification_report
-from joblib import dump
-import tempfile
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
+from sklearn.multioutput import MultiOutputClassifier
+import nltk
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
 import os
 
-def load_data(database_url):
-    engine = create_engine(database_url)
-    df = pd.read_sql_table('disaster_messages', engine)
+nltk.download('punkt')
+nltk.download('wordnet')
+nltk.download('stopwords')
+
+def load_data(database_filepath):
+    """
+    Load data from the SQLite database.
+    
+    Args:
+    database_filepath (str): Filepath for the SQLite database containing the cleaned data.
+    
+    Returns:
+    X (pd.Series): Messages for training.
+    Y (pd.DataFrame): Labels for the categories.
+    category_names (list): List of category names for classification.
+    """
+    # Load data from database
+    engine = create_engine(f'sqlite:///{database_filepath}')
+    df = pd.read_sql_table('YourTableName', engine)
+    
+    # Define feature and target variables
     X = df['message']
-    y = df.iloc[:, 4:]
-    return X, y, y.columns
+    Y = df.drop(['id', 'message', 'original', 'genre'], axis=1)
+    category_names = Y.columns.tolist()
+    
+    return X, Y, category_names
+
+def tokenize(text):
+    """
+    Tokenize and process text data.
+    
+    Args:
+    text (str): Text message to be tokenized.
+    
+    Returns:
+    clean_tokens (list): List of cleaned tokens.
+    """
+    # Tokenize text
+    tokens = word_tokenize(text)
+    
+    # Remove stopwords
+    stop_words = set(stopwords.words('english'))
+    
+    # Lemmatize and clean tokens
+    lemmatizer = nltk.WordNetLemmatizer()
+    clean_tokens = [lemmatizer.lemmatize(tok).lower().strip() for tok in tokens if tok not in stop_words]
+    
+    return clean_tokens
 
 def build_model():
-    pipeline = MultiOutputClassifier(RandomForestClassifier())
-    parameters = {'estimator__n_estimators': [50, 100], 'estimator__max_depth': [10, 20]}
-    model = GridSearchCV(pipeline, parameters, cv=3, verbose=2, n_jobs=-1)
+    """
+    Build a machine learning pipeline and perform grid search.
+    
+    Returns:
+    model (GridSearchCV): Grid search model object.
+    """
+    # Build pipeline with text processing and classifier
+    pipeline = Pipeline([
+        ('vect', CountVectorizer(tokenizer=tokenize)),
+        ('tfidf', TfidfTransformer()),
+        ('clf', MultiOutputClassifier(RandomForestClassifier()))
+    ])
+    
+    # Set grid search parameters
+    parameters = {
+        'clf__estimator__n_estimators': [50, 100],
+        'clf__estimator__min_samples_split': [2, 4]
+    }
+    
+    # Initialize grid search with pipeline and parameters
+    model = GridSearchCV(pipeline, param_grid=parameters, verbose=1, cv=3)
     return model
 
-def evaluate_model(model, X_test, y_test, category_names):
-    y_pred = model.predict(X_test)
+def evaluate_model(model, X_test, Y_test, category_names):
+    """
+    Evaluate the model by printing classification report for each category.
+    
+    Args:
+    model: Trained machine learning model.
+    X_test (pd.Series): Test features.
+    Y_test (pd.DataFrame): True labels for test data.
+    category_names (list): List of category names.
+    """
+    # Predict on test data
+    Y_pred = model.predict(X_test)
+    
+    # Print classification report for each category
     for i, col in enumerate(category_names):
-        print(f'Category: {col}\n{classification_report(y_test.iloc[:, i], y_pred[:, i])}')
+        print(f'Category: {col}\n', classification_report(Y_test[col], Y_pred[:, i]))
 
-def save_model(model):
-    with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-        dump(model, tmp_file.name)
-        print(f"Model saved temporarily at {tmp_file.name}")
+def save_model(model, model_filepath):
+    """
+    Save the trained model as a pickle file.
+    
+    Args:
+    model: Trained machine learning model.
+    model_filepath (str): Filepath for saving the pickle file.
+    """
+    # Ensure the directory exists
+    model_dir = os.path.dirname(model_filepath)
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+
+    # Save model to pickle file
+    with open(model_filepath, 'wb') as file:
+        pickle.dump(model, file)
 
 def main():
-    database_url = os.getenv('DATABASE_URL')
-
-    if not database_url:
-        print("Error: DATABASE_URL not found.")
+    """
+    Main function to execute data loading, model building, training,
+    evaluation, and saving.
+    """
+    # Check if correct number of arguments is provided
+    if len(sys.argv) != 3:
+        print('Error: Please provide the filepath of the disaster messages database and model pickle file.')
         sys.exit(1)
 
-    X, y, category_names = load_data(database_url)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    database_filepath, model_filepath = sys.argv[1:]
+    
+    # Check if the database file exists
+    if not os.path.exists(database_filepath):
+        print(f"Error: The file '{database_filepath}' does not exist.")
+        sys.exit(1)
 
+    print('Loading data...\n    DATABASE:', database_filepath)
+    X, Y, category_names = load_data(database_filepath)
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2)
+    
+    print('Building model...')
     model = build_model()
-    model.fit(X_train, y_train)
+    
+    print('Training model...')
+    try:
+        model.fit(X_train, Y_train)
+    except Exception as e:
+        print(f"Error in training the model: {e}")
+        sys.exit(1)
+    
+    print('Evaluating model...')
+    evaluate_model(model, X_test, Y_test, category_names)
 
-    evaluate_model(model, X_test, y_test, category_names)
-    save_model(model)
+    print('Saving model...\n    MODEL:', model_filepath)
+    save_model(model.best_estimator_, model_filepath)  # Save the best model after grid search
+
+    print('Trained model saved!')
 
 if __name__ == '__main__':
     main()

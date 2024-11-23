@@ -1,7 +1,7 @@
 Flask
 gdown
 joblib
-matplotlib
+plotly
 nltk
 pandas
 scikit-learn
