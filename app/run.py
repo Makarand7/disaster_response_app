@@ -2,7 +2,6 @@ import os
 import re
 import io
 import pandas as pd
-
 from base64 import b64encode
 from flask import Flask, render_template, request
 from joblib import load
@@ -10,14 +9,23 @@ from sqlalchemy import create_engine
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 import nltk
+import gdown
 
 import plotly
 from plotly.graph_objs import Bar
 import json
+from celery import Celery
 
 # Ensure required NLTK data is downloaded
 nltk.download("stopwords")
 nltk.download("punkt")
+
+# Celery configuration
+celery = Celery(
+    "run",  # Name of the current Flask app (this will be the Celery worker name)
+    backend="redis://localhost:6379/0",  # Redis backend for task results
+    broker="redis://localhost:6379/0"  # Redis broker for task queue
+)
 
 app = Flask(__name__)
 
@@ -42,9 +50,33 @@ except Exception as e:
     print(f"Error connecting to database: {e}")
     exit(1)
 
-# Lazy-load model from 'models/classifier.pkl'
+# Path to save the model
 model_filepath = os.path.join(current_dir, "../models/classifier.pkl")
+file_id = "1eMAjZM3_oCC_cV-EVUswCnL3_jj31ryH"  # Replace with your Google Drive file ID
+
+# Download model if not already present (Celery task will handle background download)
+if not os.path.exists(model_filepath):
+    download_url = f"https://drive.google.com/uc?id={file_id}"
+
+    # Trigger background task to download the model via Celery
+    @celery.task
+    def download_model():
+        if not os.path.exists(model_filepath):
+            try:
+                gdown.download(download_url, model_filepath, quiet=False)
+                print("Model downloaded successfully.")
+            except Exception as e:
+                print(f"Error downloading model: {e}")
+
+    # Trigger the Celery task
+    download_model.apply_async()
+
+# Load the model for later use
 model = None
+try:
+    model = load(model_filepath)
+except Exception as e:
+    print(f"Error loading model: {e}")
 
 @app.route("/index")
 @app.route("/")
@@ -117,4 +149,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     # Bind to 0.0.0.0 for external connections
     app.run(host="0.0.0.0", port=port, debug=True)
-
