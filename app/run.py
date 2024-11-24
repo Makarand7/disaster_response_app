@@ -10,11 +10,11 @@ from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 import nltk
 import gdown
+from celery import Celery
 
 import plotly
 from plotly.graph_objs import Bar
 import json
-from celery import Celery
 
 # Ensure required NLTK data is downloaded
 nltk.download("stopwords")
@@ -71,19 +71,25 @@ if not os.path.exists(model_filepath):
                 print("Model downloaded successfully.")
             except Exception as e:
                 print(f"Error downloading model: {e}")
-
+    
     # Trigger the Celery task
     download_model.apply_async()
 
-# Load the model for later use
+# Load the model for later use (ensure download task is complete)
 model = None
 try:
-    model = load(model_filepath)
+    # Make sure that the model exists before loading
+    if os.path.exists(model_filepath):
+        model = load(model_filepath)
+        print("Model loaded successfully.")
+    else:
+        raise Exception(f"Model file not found: {model_filepath}")
 except Exception as e:
     print(f"Error loading model: {e}")
 
 @app.route("/index")
 @app.route("/")
+
 def index():
     genre_counts = df.groupby("genre").count()["message"]
     genre_names = list(genre_counts.index)
