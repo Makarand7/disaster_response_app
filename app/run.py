@@ -23,7 +23,8 @@ nltk.download("punkt")
 # Celery configuration
 celery = Celery(
     "run",  # Name of the current Flask app (this will be the Celery worker name)
-    broker=os.environ.get("REDIS_URL"),
+    #broker=os.environ.get("REDIS_URL"),
+    broker="redis://default:AWXbAAIncDEzM2FlMWE3YzdjOTE0MWEyYmFmOGQxM2EwZTRlZGM4MXAxMjYwNzU@refined-panda-26075.upstash.io:6379",
     backend=None  # No results stored to avoid exceeding the limit
 )
 
