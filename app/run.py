@@ -55,11 +55,14 @@ except Exception as e:
     print(f"Error connecting to database: {e}")
     exit(1)
 
-# Path to save the model
-model_filepath = os.path.join(current_dir, "../models/classifier.pkl")
-file_id = "1eMAjZM3_oCC_cV-EVUswCnL3_jj31ryH"  # Replace with your Google Drive file ID
+# Replace hardcoded file_id with environment variable
+file_id = os.environ.get("FILE_ID")  # Environment variable for Google Drive model file ID
+if not file_id:
+    raise ValueError("FILE_ID environment variable not set.")
 
 # Download model if not already present (Celery task will handle background download)
+model_filepath = os.path.join(current_dir, "../models/classifier.pkl")
+
 if not os.path.exists(model_filepath):
     download_url = f"https://drive.google.com/uc?id={file_id}"
 
@@ -72,7 +75,7 @@ if not os.path.exists(model_filepath):
                 print("Model downloaded successfully.")
             except Exception as e:
                 print(f"Error downloading model: {e}")
-    
+
     # Trigger the Celery task
     download_model.apply_async()
 
@@ -90,7 +93,6 @@ except Exception as e:
 
 @app.route("/index")
 @app.route("/")
-
 def index():
     genre_counts = df.groupby("genre").count()["message"]
     genre_names = list(genre_counts.index)
