@@ -60,9 +60,10 @@ file_id = os.environ.get("FILE_ID")  # Environment variable for Google Drive mod
 if not file_id:
     raise ValueError("FILE_ID environment variable not set.")
 
-# Download model if not already present (Celery task will handle background download)
-model_filepath = os.path.join(current_dir, "../models/classifier.pkl")
+# Define the path to save the model
+model_filepath = os.path.join(current_dir, "models", "classifier.pkl")  # Use a specific directory for model
 
+# Download model if not already present (Celery task will handle background download)
 if not os.path.exists(model_filepath):
     download_url = f"https://drive.google.com/uc?id={file_id}"
 
@@ -71,6 +72,7 @@ if not os.path.exists(model_filepath):
     def download_model():
         if not os.path.exists(model_filepath):
             try:
+                # Ensure the model is downloaded to the correct directory
                 gdown.download(download_url, model_filepath, quiet=False)
                 print("Model downloaded successfully.")
             except Exception as e:
