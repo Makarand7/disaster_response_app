@@ -54,42 +54,41 @@ except Exception as e:
     print(f"Error connecting to database: {e}")
     exit(1)
 
-# Path to save the model
-model_filepath = os.path.join(current_dir, "../models/classifier.pkl")
+# Google Drive file ID for the model
 file_id = "1eMAjZM3_oCC_cV-EVUswCnL3_jj31ryH"  # Replace with your Google Drive file ID
+download_url = f"https://drive.google.com/uc?id={file_id}"
 
-# Download model if not already present (Celery task will handle background download)
-if not os.path.exists(model_filepath):
-    download_url = f"https://drive.google.com/uc?id={file_id}"
+# Function to download the model from Google Drive
+def download_model():
+    model_filepath = "/tmp/classifier.pkl"  # Temporarily store the model in the /tmp directory
+    try:
+        print("Downloading model from Google Drive...")
+        gdown.download(download_url, model_filepath, quiet=False)
+        print("Model downloaded successfully.")
+        return model_filepath
+    except Exception as e:
+        print(f"Error downloading model: {e}")
+        return None
 
-    # Trigger background task to download the model via Celery
-    @celery.task
-    def download_model():
-        if not os.path.exists(model_filepath):
-            try:
-                gdown.download(download_url, model_filepath, quiet=False)
-                print("Model downloaded successfully.")
-            except Exception as e:
-                print(f"Error downloading model: {e}")
-    
-    # Trigger the Celery task
-    download_model.apply_async()
+# Load the model directly from Google Drive into memory
+def load_model():
+    model_filepath = download_model()
+    if model_filepath:
+        try:
+            print("Loading model...")
+            model = load(model_filepath)  # Load the model into memory
+            print("Model loaded successfully.")
+            return model
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            return None
+    return None
 
-# Load the model for later use (ensure download task is complete)
-model = None
-try:
-    # Make sure that the model exists before loading
-    if os.path.exists(model_filepath):
-        model = load(model_filepath)
-        print("Model loaded successfully.")
-    else:
-        raise Exception(f"Model file not found: {model_filepath}")
-except Exception as e:
-    print(f"Error loading model: {e}")
+# Load the model at app startup
+model = load_model()
 
 @app.route("/index")
 @app.route("/")
-
 def index():
     genre_counts = df.groupby("genre").count()["message"]
     genre_names = list(genre_counts.index)
@@ -139,11 +138,7 @@ def go():
     query = request.args.get("query", "")
 
     if model is None:
-        try:
-            model = load(model_filepath)
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            return render_template("go.html", query=query, classification_result={})
+        model = load_model()
 
     try:
         classification_labels = model.predict([query])[0]
