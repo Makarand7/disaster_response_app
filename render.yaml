@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: disaster-response-app
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app  # Adjust this to match your app's entry point
+    plan: free  # Change to "starter" or higher for paid plans if needed
+    pythonVersion: 3.9  # Specify the compatible Python version
+
