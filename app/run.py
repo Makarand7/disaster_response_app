@@ -23,8 +23,8 @@ nltk.download("punkt")
 # Celery configuration
 celery = Celery(
     "run",  # Name of the current Flask app (this will be the Celery worker name)
-    backend="redis://localhost:6379/0",  # Redis backend for task results
-    broker="redis://localhost:6379/0"  # Redis broker for task queue
+    broker=os.environ.get("REDIS_URL"),
+    backend=None  # No results stored to avoid exceeding the limit
 )
 
 app = Flask(__name__)
