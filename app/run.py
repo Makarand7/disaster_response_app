@@ -21,10 +21,13 @@ nltk.download("stopwords")
 nltk.download("punkt")
 
 # Celery configuration
+redis_url = os.environ.get("REDIS_URL")  # Use environment variable for Redis URL
+if not redis_url:
+    raise ValueError("REDIS_URL environment variable not set.")
+
 celery = Celery(
     "run",  # Name of the current Flask app (this will be the Celery worker name)
-    #broker=os.environ.get("REDIS_URL"),
-    broker="redis://default:AWXbAAIncDEzM2FlMWE3YzdjOTE0MWEyYmFmOGQxM2EwZTRlZGM4MXAxMjYwNzU@refined-panda-26075.upstash.io:6379",
+    broker=redis_url,  # Redis URL fetched from the environment
     backend=None  # No results stored to avoid exceeding the limit
 )
 
