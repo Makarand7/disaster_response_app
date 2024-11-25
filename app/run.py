@@ -10,6 +10,7 @@ from nltk.corpus import stopwords
 import nltk
 import gdown
 from celery import Celery
+
 import plotly
 from plotly.graph_objs import Bar
 import json
@@ -23,11 +24,7 @@ redis_url = os.environ.get("REDIS_URL")
 if not redis_url:
     raise ValueError("REDIS_URL environment variable not set.")
 
-celery = Celery(
-    "run",
-    broker=redis_url,
-    backend=None
-)
+celery = Celery("run", broker=redis_url, backend=None)
 
 app = Flask(__name__)
 
@@ -45,7 +42,6 @@ database_filepath = os.path.join(current_dir, "../data/DisasterResponse.db")
 
 # Set up database connection
 engine = create_engine(f"sqlite:///{database_filepath}")
-
 try:
     df = pd.read_sql_table("disaster_messages", engine)
 except Exception as e:
@@ -71,28 +67,30 @@ def download_model():
         except Exception as e:
             print(f"Error downloading model: {e}")
 
-# Ensure the model is downloaded before starting the app
+# Start model download as a background task
 if not os.path.exists(model_filepath):
     print("Model not found locally. Starting download via Celery...")
     download_model.apply_async()
 
-    # Wait for the download to complete
-    print("Waiting for the model to be downloaded...")
-    while not os.path.exists(model_filepath):
-        time.sleep(5)  # Check every 5 seconds
-    print("Model download complete.")
+# Function to check if the model is ready
+def is_model_ready():
+    return os.path.exists(model_filepath)
 
-# Load the model
+# Load the model if available
 model = None
-try:
-    model = load(model_filepath)
-    print("Model loaded successfully.")
-except Exception as e:
-    print(f"Error loading model: {e}")
+if is_model_ready():
+    try:
+        model = load(model_filepath)
+        print("Model loaded successfully.")
+    except Exception as e:
+        print(f"Error loading model: {e}")
 
 @app.route("/")
 @app.route("/index")
 def index():
+    if not is_model_ready():
+        return "Model is initializing. Please refresh the page after a few moments."
+
     genre_counts = df.groupby("genre").count()["message"]
     genre_names = list(genre_counts.index)
 
@@ -140,8 +138,8 @@ def go():
     global model
     query = request.args.get("query", "")
 
-    if model is None:
-        return render_template("go.html", query=query, classification_result={})
+    if model is None or not is_model_ready():
+        return "Model is still downloading. Please try again later."
 
     try:
         classification_labels = model.predict([query])[0]
@@ -153,7 +151,5 @@ def go():
     return render_template("go.html", query=query, classification_result=classification_results)
 
 if __name__ == "__main__":
-    # Get the port from the environment variable; default to 5000 if not found
     port = int(os.environ.get("PORT", 5000))
-    print(f"Starting Flask app on port {port}")
     app.run(host="0.0.0.0", port=port, debug=True)
