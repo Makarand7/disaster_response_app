@@ -19,3 +19,4 @@ models/classifier.pkl
 .DS_Store
 Thumbs.db
 
+app/models/classifier.pkl

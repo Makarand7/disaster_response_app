@@ -1,18 +1,16 @@
 import os
-import re
 import time
 import pandas as pd
 from flask import Flask, render_template, request
 from joblib import load
 from sqlalchemy import create_engine
-from nltk.tokenize import word_tokenize
-from nltk.corpus import stopwords
 import nltk
 import gdown
 from celery import Celery
 import plotly
 from plotly.graph_objs import Bar
 import json
+from utils import tokenize  # Import tokenize from utils.py
 
 # Ensure required NLTK data is downloaded
 nltk.download("stopwords")
@@ -26,14 +24,6 @@ if not redis_url:
 celery = Celery("run", broker=redis_url, backend=None)
 
 app = Flask(__name__)
-
-# Tokenize function
-def tokenize(text):
-    stop_words = set(stopwords.words("english"))
-    text = re.sub(r"[^a-zA-Z0-9]", " ", text.lower())
-    words = word_tokenize(text)
-    clean_tokens = [w for w in words if w not in stop_words]
-    return clean_tokens
 
 # Resolve database path
 current_dir = os.path.dirname(os.path.abspath(__file__))
