@@ -10,7 +10,6 @@ from nltk.corpus import stopwords
 import nltk
 import gdown
 from celery import Celery
-
 import plotly
 from plotly.graph_objs import Bar
 import json
@@ -60,8 +59,10 @@ os.makedirs(os.path.dirname(model_filepath), exist_ok=True)
 # Celery task for downloading the model
 @celery.task
 def download_model():
+    """Download the model from Google Drive."""
     if not os.path.exists(model_filepath):
         try:
+            print("Starting model download...")
             gdown.download(f"https://drive.google.com/uc?id={file_id}", model_filepath, quiet=False)
             print("Model downloaded successfully.")
         except Exception as e:
@@ -76,7 +77,7 @@ if not os.path.exists(model_filepath):
 def is_model_ready():
     return os.path.exists(model_filepath)
 
-# Load the model if available
+# Load the model when it's ready
 model = None
 if is_model_ready():
     try:
@@ -88,6 +89,7 @@ if is_model_ready():
 @app.route("/")
 @app.route("/index")
 def index():
+    """Render the main page with visuals."""
     if not is_model_ready():
         return "Model is initializing. Please refresh the page after a few moments."
 
@@ -135,6 +137,7 @@ def index():
 
 @app.route("/go")
 def go():
+    """Handle user query and return classification results."""
     global model
     query = request.args.get("query", "")
 
@@ -151,5 +154,21 @@ def go():
     return render_template("go.html", query=query, classification_result=classification_results)
 
 if __name__ == "__main__":
+    # Wait for the model to download before starting the app
+    if not is_model_ready():
+        print("Waiting for the model to be downloaded...")
+        while not is_model_ready():
+            time.sleep(5)  # Check every 5 seconds
+        print("Model download complete.")
+
+    # Load the model
+    if model is None:
+        try:
+            model = load(model_filepath)
+            print("Model loaded successfully.")
+        except Exception as e:
+            print(f"Error loading model: {e}")
+
+    # Start the Flask app
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
