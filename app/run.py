@@ -1,6 +1,6 @@
 import os
 import re
-import time  # Added for wait mechanism
+import time
 import pandas as pd
 from flask import Flask, render_template, request
 from joblib import load
@@ -10,7 +10,6 @@ from nltk.corpus import stopwords
 import nltk
 import gdown
 from celery import Celery
-
 import plotly
 from plotly.graph_objs import Bar
 import json
@@ -156,4 +155,5 @@ def go():
 if __name__ == "__main__":
     # Get the port from the environment variable; default to 5000 if not found
     port = int(os.environ.get("PORT", 5000))
+    print(f"Starting Flask app on port {port}")
     app.run(host="0.0.0.0", port=port, debug=True)
