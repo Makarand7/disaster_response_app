@@ -6,28 +6,35 @@ from joblib import load
 from sqlalchemy import create_engine
 import nltk
 import gdown
-from celery import Celery
+import redis
 import plotly
 from plotly.graph_objs import Bar
 import json
-from utils import tokenize  # Import tokenize from utils.py
 
 # Ensure required NLTK data is downloaded
 nltk.download("stopwords")
 nltk.download("punkt")
 
-# Celery configuration
+# Flask app
+app = Flask(__name__)
+
+# Redis configuration
 redis_url = os.environ.get("REDIS_URL")
 if not redis_url:
     raise ValueError("REDIS_URL environment variable not set.")
 
-celery = Celery("run", broker=redis_url, backend=None)
+# Connect to Redis
+r = redis.StrictRedis.from_url(redis_url)
 
-app = Flask(__name__)
-
-# Resolve database path
+# Paths and configurations
 current_dir = os.path.dirname(os.path.abspath(__file__))
 database_filepath = os.path.join(current_dir, "../data/DisasterResponse.db")
+model_filepath = os.path.join(current_dir, "models", "classifier.pkl")
+os.makedirs(os.path.dirname(model_filepath), exist_ok=True)
+
+file_id = os.environ.get("FILE_ID")
+if not file_id:
+    raise ValueError("FILE_ID environment variable not set.")
 
 # Set up database connection
 engine = create_engine(f"sqlite:///{database_filepath}")
@@ -37,35 +44,28 @@ except Exception as e:
     print(f"Error connecting to database: {e}")
     exit(1)
 
-# Google Drive file ID from environment variable
-file_id = os.environ.get("FILE_ID")
-if not file_id:
-    raise ValueError("FILE_ID environment variable not set.")
+# Function to check if the model is ready
+def is_model_ready():
+    return os.path.exists(model_filepath)
 
-# Define the model path
-model_filepath = os.path.join(current_dir, "models", "classifier.pkl")
-os.makedirs(os.path.dirname(model_filepath), exist_ok=True)
-
-# Celery task for downloading the model
-@celery.task
+# Function to download the model
 def download_model():
-    """Download the model from Google Drive."""
+    """Download the model asynchronously."""
     if not os.path.exists(model_filepath):
         try:
             print("Starting model download...")
             gdown.download(f"https://drive.google.com/uc?id={file_id}", model_filepath, quiet=False)
+            r.set("model_downloaded", "True")  # Mark model as downloaded in Redis
             print("Model downloaded successfully.")
         except Exception as e:
             print(f"Error downloading model: {e}")
+            r.set("model_downloaded", "False")  # Mark download failed in Redis
 
 # Start model download as a background task
-if not os.path.exists(model_filepath):
-    print("Model not found locally. Starting download via Celery...")
-    download_model.apply_async()
-
-# Function to check if the model is ready
-def is_model_ready():
-    return os.path.exists(model_filepath)
+if not is_model_ready() and r.get("model_downloaded") is None:
+    print("Model not found locally. Starting download...")
+    r.set("model_downloaded", "False")  # Mark model as not downloaded in Redis
+    download_model()
 
 # Load the model when it's ready
 model = None
@@ -89,15 +89,9 @@ def index():
     category_counts = df.iloc[:, 4:].sum().sort_values(ascending=False)
     category_names = list(category_counts.index)
 
-    # Create visuals
     graphs = [
         {
-            "data": [
-                Bar(
-                    x=genre_names,
-                    y=genre_counts
-                )
-            ],
+            "data": [Bar(x=genre_names, y=genre_counts)],
             "layout": {
                 "title": "Distribution of Message Genres",
                 "yaxis": {"title": "Count"},
@@ -105,12 +99,7 @@ def index():
             }
         },
         {
-            "data": [
-                Bar(
-                    x=category_names,
-                    y=category_counts
-                )
-            ],
+            "data": [Bar(x=category_names, y=category_counts)],
             "layout": {
                 "title": "Distribution of Message Categories",
                 "yaxis": {"title": "Count"},
@@ -119,7 +108,6 @@ def index():
         }
     ]
 
-    # Encode plotly graphs in JSON
     ids = ["graph-{}".format(i) for i, _ in enumerate(graphs)]
     graphJSON = json.dumps(graphs, cls=plotly.utils.PlotlyJSONEncoder)
 
@@ -144,14 +132,11 @@ def go():
     return render_template("go.html", query=query, classification_result=classification_results)
 
 if __name__ == "__main__":
-    # Wait for the model to download before starting the app
-    if not is_model_ready():
+    # Wait for model to be downloaded before starting the app
+    while not is_model_ready() and r.get("model_downloaded") != b"True":
         print("Waiting for the model to be downloaded...")
-        while not is_model_ready():
-            time.sleep(5)  # Check every 5 seconds
-        print("Model download complete.")
+        time.sleep(5)  # Check every 5 seconds
 
-    # Load the model
     if model is None:
         try:
             model = load(model_filepath)
