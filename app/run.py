@@ -1,8 +1,7 @@
 import os
 import re
-import io
+import time  # Added for wait mechanism
 import pandas as pd
-from base64 import b64encode
 from flask import Flask, render_template, request
 from joblib import load
 from sqlalchemy import create_engine
@@ -21,15 +20,14 @@ nltk.download("stopwords")
 nltk.download("punkt")
 
 # Celery configuration
-redis_url = os.environ.get("REDIS_URL")  # Use environment variable for Redis URL
+redis_url = os.environ.get("REDIS_URL")
 if not redis_url:
     raise ValueError("REDIS_URL environment variable not set.")
 
-# Setting the Celery broker and backend
 celery = Celery(
-    "run",  # Name of the current Flask app (this will be the Celery worker name)
-    broker=redis_url,  # Redis URL fetched from the environment
-    backend=None  # No results stored to avoid exceeding the limit
+    "run",
+    broker=redis_url,
+    backend=None
 )
 
 app = Flask(__name__)
@@ -55,46 +53,46 @@ except Exception as e:
     print(f"Error connecting to database: {e}")
     exit(1)
 
-# Replace hardcoded file_id with environment variable
-file_id = os.environ.get("FILE_ID")  # Environment variable for Google Drive model file ID
+# Google Drive file ID from environment variable
+file_id = os.environ.get("FILE_ID")
 if not file_id:
     raise ValueError("FILE_ID environment variable not set.")
 
-# Define the path to save the model
-model_filepath = os.path.join(current_dir, "models", "classifier.pkl")  # Use a specific directory for model
+# Define the model path
+model_filepath = os.path.join(current_dir, "models", "classifier.pkl")
+os.makedirs(os.path.dirname(model_filepath), exist_ok=True)
 
-# Download model if not already present (Celery task will handle background download)
+# Celery task for downloading the model
+@celery.task
+def download_model():
+    if not os.path.exists(model_filepath):
+        try:
+            gdown.download(f"https://drive.google.com/uc?id={file_id}", model_filepath, quiet=False)
+            print("Model downloaded successfully.")
+        except Exception as e:
+            print(f"Error downloading model: {e}")
+
+# Ensure the model is downloaded before starting the app
 if not os.path.exists(model_filepath):
-    download_url = f"https://drive.google.com/uc?id={file_id}"
-
-    # Trigger background task to download the model via Celery
-    @celery.task
-    def download_model():
-        if not os.path.exists(model_filepath):
-            try:
-                # Ensure the model is downloaded to the correct directory
-                gdown.download(download_url, model_filepath, quiet=False)
-                print("Model downloaded successfully.")
-            except Exception as e:
-                print(f"Error downloading model: {e}")
-
-    # Trigger the Celery task
+    print("Model not found locally. Starting download via Celery...")
     download_model.apply_async()
 
-# Load the model for later use (ensure download task is complete)
+    # Wait for the download to complete
+    print("Waiting for the model to be downloaded...")
+    while not os.path.exists(model_filepath):
+        time.sleep(5)  # Check every 5 seconds
+    print("Model download complete.")
+
+# Load the model
 model = None
 try:
-    # Make sure that the model exists before loading
-    if os.path.exists(model_filepath):
-        model = load(model_filepath)
-        print("Model loaded successfully.")
-    else:
-        raise Exception(f"Model file not found: {model_filepath}")
+    model = load(model_filepath)
+    print("Model loaded successfully.")
 except Exception as e:
     print(f"Error loading model: {e}")
 
-@app.route("/index")
 @app.route("/")
+@app.route("/index")
 def index():
     genre_counts = df.groupby("genre").count()["message"]
     genre_names = list(genre_counts.index)
@@ -105,29 +103,29 @@ def index():
     # Create visuals
     graphs = [
         {
-            'data': [
+            "data": [
                 Bar(
                     x=genre_names,
                     y=genre_counts
                 )
             ],
-            'layout': {
-                'title': 'Distribution of Message Genres',
-                'yaxis': {'title': "Count"},
-                'xaxis': {'title': "Genre"}
+            "layout": {
+                "title": "Distribution of Message Genres",
+                "yaxis": {"title": "Count"},
+                "xaxis": {"title": "Genre"}
             }
         },
         {
-            'data': [
+            "data": [
                 Bar(
                     x=category_names,
                     y=category_counts
                 )
             ],
-            'layout': {
-                'title': 'Distribution of Message Categories',
-                'yaxis': {'title': "Count"},
-                'xaxis': {'title': "Category", 'tickangle': -35}
+            "layout": {
+                "title": "Distribution of Message Categories",
+                "yaxis": {"title": "Count"},
+                "xaxis": {"title": "Category", "tickangle": -35}
             }
         }
     ]
@@ -136,7 +134,7 @@ def index():
     ids = ["graph-{}".format(i) for i, _ in enumerate(graphs)]
     graphJSON = json.dumps(graphs, cls=plotly.utils.PlotlyJSONEncoder)
 
-    return render_template('master.html', ids=ids, graphJSON=graphJSON)
+    return render_template("master.html", ids=ids, graphJSON=graphJSON)
 
 @app.route("/go")
 def go():
@@ -144,11 +142,7 @@ def go():
     query = request.args.get("query", "")
 
     if model is None:
-        try:
-            model = load(model_filepath)
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            return render_template("go.html", query=query, classification_result={})
+        return render_template("go.html", query=query, classification_result={})
 
     try:
         classification_labels = model.predict([query])[0]
@@ -162,5 +156,4 @@ def go():
 if __name__ == "__main__":
     # Get the port from the environment variable; default to 5000 if not found
     port = int(os.environ.get("PORT", 5000))
-    # Bind to 0.0.0.0 for external connections
     app.run(host="0.0.0.0", port=port, debug=True)
